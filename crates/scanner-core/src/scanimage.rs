@@ -34,6 +34,17 @@ impl ScanimageBackend {
         std::env::var("SCANIMAGE_BIN").unwrap_or_else(|_| "scanimage".into())
     }
 
+    /// Понятная ошибка запуска: чаще всего scanimage просто не установлен.
+    fn spawn_err(e: std::io::Error) -> ScannerError {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ScannerError::Spawn(format!(
+                "утилита scanimage не найдена — установите пакет sane-backends ({e})"
+            ))
+        } else {
+            ScannerError::Spawn(e.to_string())
+        }
+    }
+
     fn reset(&self) {
         self.cancel.store(false, Ordering::SeqCst);
     }
@@ -205,7 +216,7 @@ impl ScannerBackend for ScanimageBackend {
             None
         };
 
-        let mut child = cmd.spawn().map_err(|e| ScannerError::Spawn(e.to_string()))?;
+        let mut child = cmd.spawn().map_err(Self::spawn_err)?;
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");
         *self.child.lock().unwrap() = Some(child);
@@ -384,7 +395,7 @@ impl ScannerBackend for ScanimageBackend {
         if let Some(cfg) = &env_dir {
             cmd.env("SANE_CONFIG_DIR", cfg);
         }
-        let mut child = cmd.spawn().map_err(|e| ScannerError::Spawn(e.to_string()))?;
+        let mut child = cmd.spawn().map_err(Self::spawn_err)?;
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");
         *self.child.lock().unwrap() = Some(child);

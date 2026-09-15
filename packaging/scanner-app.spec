@@ -2,8 +2,9 @@
 # Пакетирует ЗАРАНЕЕ СОБРАННЫЕ бинарники (release), поэтому на целевой
 # машине не нужны rust/cargo/GTK-devel — RPM устанавливается офлайн:
 #   sudo rpm -Uvh scanner-app-0.2.0-1.*.rpm
-# Жёстких Requires нет: зависимости SANE/OCR — рекомендованные, чтобы
-# установка проходила даже на офлайн-системе без этих пакетов.
+# SANE-стек (sane-backends/sane-airscan/ipp-usb) — жёсткий Requires:
+# без него приложение не может сканировать. Жёстких ELF-зависимостей
+# (GTK и т.п.) нет, чтобы установка проходила офлайн.
 # Сборка: rpmbuild -bb packaging/scanner-app-bin.spec
 
 %global _enable_debug_package 0
@@ -11,7 +12,7 @@
 
 Name:           scanner-app
 Version:        0.2.0
-Release:        1%{?dist}
+Release:        2%{?dist}
 Summary:        Document scanner frontend for SANE (NAPS2-like)
 License:        GPL-3.0-or-later
 URL:            https://example.local/scanner-app
@@ -22,18 +23,17 @@ Source0:        %{name}-%{version}-bin.tar.gz
 Source1:        scanner-app.desktop
 Source2:        scanner-app.svg
 
-# Не генерировать жёсткие зависимости по ELF-библиотекам (gtk4/libadwaita и
-# т.п.) — иначе офлайн-установка на РЕД ОС падает. Нужные библиотеки —
-# рекомендованные (Recommends ниже); GTK4/libadwaita есть в любой РЕД ОС
-# с графическим окружением.
+# Не генерировать жёсткие ELF-зависимости по библиотекам (gtk4/libadwaita
+# и т.п.) — иначе офлайн-установка на РЕД ОС падает. GTK4/libadwaita есть
+# в любой РЕД ОС с графическим окружением. SANE-стек — Requires (см. выше).
 %global __requires_exclude_from ^%{_bindir}/.*$
 
 # Совместимый payload (gzip): zstd не читается rpm < 4.14 (старые РЕД ОС).
 %global _binary_payload w9.gzdio
 
-Recommends:     sane-backends
-Recommends:     sane-airscan
-Recommends:     ipp-usb
+Requires:       sane-backends
+Requires:       sane-airscan
+Requires:       ipp-usb
 Recommends:     tesseract
 Recommends:     tesseract-rus
 Recommends:     xdg-email
@@ -68,7 +68,12 @@ install -Dm 0644 %{SOURCE2} %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
-* Mon Sep 15 2025 Scanner App Team <dev@example.local> - 0.2.0
+* Mon Sep 15 2025 Scanner App Team <dev@example.local> - 0.2.0-2
+- GUI: кнопки «+» и «Обновить список» не были привязаны к действиям — исправлено
+- sane-backends/sane-airscan/ipp-usb переведены в Requires (rpm не ставит Recommends)
+- Понятная ошибка, если утилита scanimage не установлена
+
+* Mon Sep 15 2025 Scanner App Team <dev@example.local> - 0.2.0-1
 - Бинарный RPM: сборка без rust/cargo/GTK-devel на целевой машине
 - Мягкие зависимости (Recommends) — установка работает офлайн
 - CLI: исправлен игнор имени файла из --out

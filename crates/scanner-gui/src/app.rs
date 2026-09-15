@@ -224,11 +224,13 @@ fn build_main_ui(window: &adw::ApplicationWindow, state: &SharedState) -> Rc<Ui>
     dev_state_icon.set_tooltip_text(Some(&t(lang, "device.status.unknown")));
     dev_state_icon.set_valign(gtk::Align::Center);
 
-    let btn_refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
-    btn_refresh.set_tooltip_text(Some(&t(lang, "device.refresh")));
-
     let btn_add = gtk::Button::from_icon_name("list-add-symbolic");
     btn_add.set_tooltip_text(Some(&t(lang, "device.add")));
+    btn_add.set_action_name(Some("win.add-device"));
+
+    let btn_refresh = gtk::Button::from_icon_name("view-refresh-symbolic");
+    btn_refresh.set_tooltip_text(Some(&t(lang, "device.refresh")));
+    btn_refresh.set_action_name(Some("win.refresh-devices"));
 
     header.pack_start(&btn_refresh);
     header.pack_start(&device_combo);
