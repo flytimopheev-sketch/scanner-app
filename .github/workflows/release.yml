@@ -34,7 +34,7 @@ jobs:
           chmod +x /usr/local/bin/zig
       - name: Release-сборка (glibc 2.34)
         env:
-          RUSTFLAGS: "-L native=/usr/lib/x86_64-linux-gnu -L native=/lib/x86_64-linux-gnu"
+          RUSTFLAGS: "-L native=/usr/lib64"
         run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.34
       - name: Проверка бинарников
         run: |
