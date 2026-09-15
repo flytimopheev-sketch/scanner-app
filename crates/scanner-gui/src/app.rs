@@ -265,8 +265,10 @@ fn build_main_ui(window: &adw::ApplicationWindow, state: &SharedState) -> Rc<Ui>
     let btn_profile_save = gtk::Button::with_label(&t(lang, "opt.profile.save_current"));
     btn_profile_save.add_css_class("flat");
     btn_profile_save.set_hexpand(true);
+    btn_profile_save.set_action_name(Some("win.profile-save"));
     let btn_profile_manage = gtk::Button::from_icon_name("view-list-symbolic");
     btn_profile_manage.set_tooltip_text(Some(&t(lang, "profiles.title")));
+    btn_profile_manage.set_action_name(Some("win.profile-manage"));
     profile_btns.append(&btn_profile_save);
     profile_btns.append(&btn_profile_manage);
     group_profile.add(&profile_btns);
@@ -441,8 +443,10 @@ fn build_main_ui(window: &adw::ApplicationWindow, state: &SharedState) -> Rc<Ui>
     };
 
     let btn_import = btn_with_icon("document-open-symbolic", &t(lang, "action.import_files"));
+    btn_import.set_action_name(Some("win.import"));
 
     let btn_preview = gtk::Button::with_label(&t(lang, "action.preview"));
+    btn_preview.set_action_name(Some("win.preview"));
 
     let spacer1 = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer1.set_hexpand(true);
@@ -451,11 +455,13 @@ fn build_main_ui(window: &adw::ApplicationWindow, state: &SharedState) -> Rc<Ui>
     btn_scan.add_css_class("suggested-action");
     btn_scan.add_css_class("pill");
     btn_scan.set_widget_name("scan-button");
+    btn_scan.set_action_name(Some("win.scan"));
 
     let btn_cancel = gtk::Button::with_label(&t(lang, "action.cancel"));
     btn_cancel.add_css_class("destructive-action");
     btn_cancel.add_css_class("pill");
     btn_cancel.set_sensitive(false);
+    btn_cancel.set_action_name(Some("win.cancel"));
 
     let spacer2 = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer2.set_hexpand(true);
@@ -475,6 +481,7 @@ fn build_main_ui(window: &adw::ApplicationWindow, state: &SharedState) -> Rc<Ui>
     let btn_pdf = btn_with_icon("document-save-symbolic", &t(lang, "action.save_pdf"));
     btn_pdf.add_css_class("pill");
     btn_pdf.set_widget_name("pdf-button");
+    btn_pdf.set_action_name(Some("win.save-pdf"));
 
     bottom.append(&btn_import);
     bottom.append(&btn_preview);

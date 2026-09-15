@@ -6,9 +6,10 @@ GenericName=Scanning utility
 GenericName[ru]=Утилита сканирования
 Comment=Scan documents via SANE: USB, eSCL/AirScan, WSD, ADF, duplex
 Comment[ru]=Сканирование документов через SANE: USB, eSCL/AirScan, WSD, ADF, дуплекс
-Exec=scanner-gui
+Exec=env GSK_RENDERER=gl scanner-gui
 Icon=scanner-app
 Terminal=false
+StartupWMClass=scanner-gui
 Categories=Office;Scanning;GTK;
 Keywords=scanner;scan;sane;pdf;сканер;сканирование;
 StartupNotify=true
