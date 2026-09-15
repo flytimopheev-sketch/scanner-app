@@ -33,7 +33,7 @@ Source2:        scanner-app.svg
 
 Requires:       sane-backends
 Requires:       sane-airscan
-Requires:       ipp-usb
+Recommends:     ipp-usb
 Recommends:     tesseract
 Recommends:     tesseract-rus
 Recommends:     xdg-email
