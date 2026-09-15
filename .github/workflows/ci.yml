@@ -38,12 +38,12 @@ jobs:
             libgtk-4-dev libadwaita-1-dev pkg-config clang
       - name: Сборка
         run: cargo build --workspace
-      - name: scanner-cli: устройства + mock-скан в PDF
+      - name: "scanner-cli: устройства + mock-скан в PDF"
         run: |
           SCANNER_BACKEND=mock target/debug/scanner-cli --list-devices
           SCANNER_BACKEND=mock target/debug/scanner-cli --out /tmp/demo.pdf
           test -s /tmp/demo.pdf
-      - name: scanner-worker: протокол JSON-lines
+      - name: "scanner-worker: протокол JSON-lines"
         run: |
           (echo '{"id":1,"cmd":"ping"}'; echo '{"id":2,"cmd":"shutdown"}') \
             | SCANNER_BACKEND=mock timeout 15 target/debug/scanner-worker \
