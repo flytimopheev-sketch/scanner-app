@@ -1,0 +1,29 @@
+[package]
+name = "scanner-gui"
+description = "GTK4/libadwaita GUI for the document scanner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "scanner-gui"
+path = "src/main.rs"
+
+[features]
+default = []
+sane-ffi = ["scanner-core/sane-ffi"]
+
+[dependencies]
+scanner-core = { path = "../scanner-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+gtk4 = { workspace = true }
+libadwaita = { workspace = true }
+gio = { workspace = true }
+glib = { workspace = true }
+gdk4 = { workspace = true }
+async-channel = { workspace = true }
+chrono = { workspace = true }

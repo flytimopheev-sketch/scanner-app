@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Иконки кладутся ПРЯМО в корень ресурсного пути: GTK 4.10+ трактует
+     файлы в зарегистрированном resource-path как «unthemed» иконки
+     (gtkicontheme.c: g_resources_enumerate_children без обхода подкаталогов).
+
+     PNG-версии — запасной путь для минимальных систем, где pixbuf не умеет
+     SVG: PNG рендерится GDK напрямую. На обычных столах используется тема. -->
+<gresources>
+  <gresource prefix="/ru/redos/ScannerApp/icons">
+    <file compressed="true">color-select-symbolic.png</file>
+    <file compressed="true">dialog-question-symbolic.png</file>
+    <file compressed="true">document-open-symbolic.png</file>
+    <file compressed="true">document-save-symbolic.png</file>
+    <file compressed="true">go-next-symbolic.png</file>
+    <file compressed="true">go-previous-symbolic.png</file>
+    <file compressed="true">image-auto-adjust-symbolic.png</file>
+    <file compressed="true">image-auto-adjust-symbolic.svg</file>
+    <file compressed="true">list-add-symbolic.png</file>
+    <file compressed="true">media-record-symbolic.png</file>
+    <file compressed="true">network-offline-symbolic.png</file>
+    <file compressed="true">object-rotate-left-symbolic.png</file>
+    <file compressed="true">object-rotate-right-symbolic.png</file>
+    <file compressed="true">object-select-symbolic.png</file>
+    <file compressed="true">open-menu-symbolic.png</file>
+    <file compressed="true">pan-down-symbolic.png</file>
+    <file compressed="true">scanner-symbolic.png</file>
+    <file compressed="true">tool-crop-symbolic.png</file>
+    <file compressed="true">tool-crop-symbolic.svg</file>
+    <file compressed="true">user-trash-symbolic.png</file>
+    <file compressed="true">view-list-symbolic.png</file>
+    <file compressed="true">view-more-symbolic.png</file>
+    <file compressed="true">view-refresh-symbolic.png</file>
+    <file compressed="true">window-close-symbolic.png</file>
+    <file compressed="true">window-maximize-symbolic.png</file>
+    <file compressed="true">window-minimize-symbolic.png</file>
+  </gresource>
+</gresources>

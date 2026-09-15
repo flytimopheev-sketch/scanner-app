@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Document Scanner
+Name[ru]=Сканер документов
+GenericName=Scanning utility
+GenericName[ru]=Утилита сканирования
+Comment=Scan documents via SANE: USB, eSCL/AirScan, WSD, ADF, duplex
+Comment[ru]=Сканирование документов через SANE: USB, eSCL/AirScan, WSD, ADF, дуплекс
+Exec=scanner-gui
+Icon=scanner-app
+Terminal=false
+Categories=Office;Scanning;GTK;
+Keywords=scanner;scan;sane;pdf;сканер;сканирование;
+StartupNotify=true

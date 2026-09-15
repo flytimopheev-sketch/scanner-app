@@ -1,0 +1,41 @@
+/* Тёмная палитра «Сканера документов».
+   Переопределяет только переменные из style.css — все правила
+   (скругления, тени, градиенты) остаются прежними. Подключается
+   автоматически при включении тёмной темы (StyleManager::dark). */
+
+@define-color accent_bg_color #82a3f8;
+@define-color accent_color #9ab5f9;
+@define-color accent_fg_color #0e1116;
+@define-color window_bg_color #1d1f26;
+@define-color view_bg_color #262933;
+@define-color card_bg_color #262933;
+@define-color popover_bg_color #2a2d38;
+@define-color sidebar_bg_color #21242c;
+@define-color thumbnail_bg_color #2b2e39;
+
+/* Поверхности и текст */
+@define-color window_grad_top #212329;
+@define-color window_grad_bottom #1a1c22;
+@define-color card_over_bg_color rgba(38, 41, 51, 0.94);
+@define-color sidebar_over_bg_color rgba(33, 36, 44, 0.88);
+@define-color page_actions_bg_color rgba(38, 41, 51, 0.78);
+@define-color mono_bg_color rgba(48, 52, 64, 0.85);
+@define-color text_secondary #a8b3cc;
+@define-color text_muted #7d89a6;
+@define-color text_heading #c3cde4;
+@define-color icon_subtle #49536d;
+@define-color danger_color #e07f7f;
+@define-color tile_picture_bg #31343f;
+
+/* Свечения и тени — темнее и мягче */
+@define-color shadow_tint_rgba rgba(0, 0, 0, 0.32);
+@define-color shadow_tint_strong_rgba rgba(0, 0, 0, 0.45);
+@define-color accent_glow_rgba rgba(130, 163, 248, 0.30);
+@define-color scan_glow_rgba rgba(93, 130, 232, 0.42);
+@define-color pdf_glow_rgba rgba(88, 168, 116, 0.42);
+@define-color scan_grad_top #6d8ef2;
+@define-color scan_grad_bottom #5476d8;
+@define-color scan_grad_top_hover #7d9bf6;
+@define-color scan_grad_bottom_hover #6183e2;
+@define-color pdf_grad_top #62a97e;
+@define-color pdf_grad_bottom #529566;

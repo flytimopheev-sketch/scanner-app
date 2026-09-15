@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Проверка и тесты (clippy-free check)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Пакеты разработки GTK4/libadwaita
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev pkg-config clang
+      - name: cargo check (все фичи)
+        run: cargo check --workspace --all-features
+      - name: cargo test (scanner-core)
+        run: cargo test -p scanner-core
+
+  mock-smoke:
+    name: Смок-тест на mock-бэкенде (CLI + воркер)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Пакеты разработки GTK4/libadwaita
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev pkg-config clang
+      - name: Сборка
+        run: cargo build --workspace
+      - name: scanner-cli: устройства + mock-скан в PDF
+        run: |
+          SCANNER_BACKEND=mock target/debug/scanner-cli --list-devices
+          SCANNER_BACKEND=mock target/debug/scanner-cli --out /tmp/demo.pdf
+          test -s /tmp/demo.pdf
+      - name: scanner-worker: протокол JSON-lines
+        run: |
+          (echo '{"id":1,"cmd":"ping"}'; echo '{"id":2,"cmd":"shutdown"}') \
+            | SCANNER_BACKEND=mock timeout 15 target/debug/scanner-worker \
+            | grep -q '"version"'
+
+  screenshots:
+    name: Скриншот-сценарий (SCANNER_SHOTS под Xvfb)
+    runs-on: ubuntu-24.04
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Пакеты (GTK + Xvfb + инструменты снимков)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev pkg-config clang \
+            xvfb x11-xserver-utils x11-utils netpbm \
+            adwaita-icon-theme librsvg2-common dbus-x11
+      - name: Сборка
+        run: cargo build -p scanner-gui -p scanner-worker
+      - name: Снимки интерфейса
+        run: bash scripts/screenshots.sh out/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: out/*.png
+
+  rpm:
+    name: Сборка RPM (Fedora-контейнер)
+    runs-on: ubuntu-24.04
+    needs: check
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Инструменты сборки
+        run: |
+          dnf install -y rpm-build rust cargo clang gtk4-devel libadwaita-devel
+      - name: rpmbuild
+        run: |
+          mkdir -p ~/rpmbuild/SOURCES
+          git archive --prefix=scanner-app-$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)/ \
+            -o ~/rpmbuild/SOURCES/scanner-app-$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2).tar.gz HEAD || \
+            tar czf ~/rpmbuild/SOURCES/scanner-app.tar.gz .
+          cp packaging/scanner-app.desktop packaging/scanner-app.svg ~/rpmbuild/SOURCES/ || true
+          rpmbuild -bb packaging/scanner-app.spec
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: ~/rpmbuild/RPMS/**/*.rpm

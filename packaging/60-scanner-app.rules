@@ -1,0 +1,15 @@
+# Правила udev для USB-сканеров (РЕД ОС и другие Linux).
+# Установка: sudo cp 60-scanner-app.rules /etc/udev/rules.d/ && sudo udevadm control --reload
+#
+# Доступ к USB-сканеру получают пользователи группы lp
+# (как рекомендует документация РЕД ОС).
+
+# Сканеры с интерфейсом USB-сканера (класс 0x06)
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{bInterfaceClass}=="06", MODE="0660", GROUP="lp"
+
+# Общая группа для устройств libusb, используемых SANE-бэкендами
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{libsane_matched}=="yes", MODE="0660", GROUP="lp"
+
+# IPP-over-USB (современные МФУ через ipp-usb/eSCL)
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="", GOTO="scanner_app_end"
+LABEL="scanner_app_end"

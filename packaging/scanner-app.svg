@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Иконка «Сканер документов»: мягкая скруглённая плашка, крышка, лист, луч сканирования -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f6ff"/>
+      <stop offset="1" stop-color="#dde7f7"/>
+    </linearGradient>
+    <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#9db6f2"/>
+      <stop offset="1" stop-color="#6b8ceb"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Фон -->
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="none" stroke="#c4d2ec" stroke-width="2"/>
+
+  <!-- Крышка сканера -->
+  <rect x="22" y="24" width="84" height="14" rx="7" fill="url(#lid)"/>
+
+  <!-- Лист документа -->
+  <rect x="34" y="46" width="60" height="44" rx="6" fill="#ffffff" stroke="#b9c8e6" stroke-width="2"/>
+  <rect x="42" y="54" width="30" height="4" rx="2" fill="#a9bde6"/>
+  <rect x="42" y="62" width="44" height="4" rx="2" fill="#c3d2ee"/>
+  <rect x="42" y="70" width="38" height="4" rx="2" fill="#c3d2ee"/>
+  <rect x="42" y="78" width="24" height="4" rx="2" fill="#d6e1f4"/>
+
+  <!-- Луч сканирования -->
+  <rect x="26" y="92" width="76" height="10" rx="5" fill="#6fbe86"/>
+  <rect x="30" y="94.5" width="68" height="5" rx="2.5" fill="#a5e0b6"/>
+
+  <!-- Ножки -->
+  <rect x="30" y="106" width="68" height="6" rx="3" fill="#b7c8e8"/>
+</svg>

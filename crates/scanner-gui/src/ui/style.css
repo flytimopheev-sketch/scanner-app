@@ -1,0 +1,232 @@
+/* Мягкая современная тема для «Сканера документов».
+   Слоится поверх libadwaita: пастельная палитра, скругления 12px,
+   мягкие тени. Все цвета — переменные; тёмная палитра задаётся в
+   style-dark.css и подключается автоматически при смене темы. */
+
+@define-color accent_bg_color #7c9ef7;
+@define-color accent_color #5d82e8;
+@define-color accent_fg_color #ffffff;
+@define-color window_bg_color #f6f8fc;
+@define-color view_bg_color #ffffff;
+@define-color card_bg_color #ffffff;
+@define-color popover_bg_color #ffffff;
+@define-color sidebar_bg_color #eef2f9;
+@define-color thumbnail_bg_color #f1f4fa;
+
+/* Палитра поверхностей и текста */
+@define-color window_grad_top #f7f9fd;
+@define-color window_grad_bottom #eef2fa;
+@define-color card_over_bg_color rgba(255, 255, 255, 0.92);
+@define-color sidebar_over_bg_color rgba(238, 242, 249, 0.85);
+@define-color page_actions_bg_color rgba(255, 255, 255, 0.75);
+@define-color mono_bg_color rgba(226, 232, 243, 0.8);
+@define-color text_secondary #5a6b8c;
+@define-color text_muted #8d9bb8;
+@define-color text_heading #67789c;
+@define-color icon_subtle #b6c4de;
+@define-color danger_color #c25b5b;
+@define-color tile_picture_bg #ffffff;
+
+/* Свечения и тени */
+@define-color shadow_tint_rgba rgba(84, 105, 160, 0.10);
+@define-color shadow_tint_strong_rgba rgba(84, 105, 160, 0.18);
+@define-color accent_glow_rgba rgba(124, 158, 247, 0.25);
+@define-color scan_glow_rgba rgba(107, 140, 235, 0.35);
+@define-color pdf_glow_rgba rgba(111, 190, 134, 0.35);
+@define-color scan_grad_top #86a7fa;
+@define-color scan_grad_bottom #6b8ceb;
+@define-color scan_grad_top_hover #93b1fb;
+@define-color scan_grad_bottom_hover #7595ee;
+@define-color pdf_grad_top #8fd0a2;
+@define-color pdf_grad_bottom #6fbe86;
+
+/* Основное окно */
+window {
+  background: linear-gradient(180deg, @window_grad_top 0%, @window_grad_bottom 100%);
+}
+
+/* Мягкие карточки */
+.soft-card {
+  border-radius: 14px;
+  background: @card_over_bg_color;
+  box-shadow: 0 1px 2px @shadow_tint_rgba,
+              0 6px 18px @shadow_tint_rgba;
+  padding: 10px;
+}
+
+/* Боковая панель */
+.sidebar {
+  background: @sidebar_over_bg_color;
+  border-radius: 14px;
+  padding: 8px;
+}
+
+/* Плитка страницы в галерее */
+.page-tile {
+  border-radius: 12px;
+  background: @thumbnail_bg_color;
+  border: 2px solid transparent;
+  padding: 6px 6px 2px 6px;
+  margin: 4px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.page-tile:hover {
+  box-shadow: 0 4px 14px @shadow_tint_strong_rgba;
+}
+
+.page-tile-selected {
+  border-color: @accent_bg_color;
+  box-shadow: 0 0 0 3px @accent_glow_rgba,
+              0 4px 14px @shadow_tint_rgba;
+}
+
+.page-tile image, .page-tile picture {
+  border-radius: 8px;
+  background: @tile_picture_bg;
+}
+
+.page-number {
+  font-size: 12px;
+  font-weight: 600;
+  color: @text_secondary;
+  padding: 4px 0 2px 0;
+}
+
+/* Кнопки действий */
+.pill {
+  border-radius: 9999px;
+  padding: 8px 22px;
+}
+
+#scan-button {
+  background: linear-gradient(180deg, @scan_grad_top 0%, @scan_grad_bottom 100%);
+  color: @accent_fg_color;
+  font-weight: 700;
+}
+
+#scan-button:hover {
+  background: linear-gradient(180deg, @scan_grad_top_hover 0%, @scan_grad_bottom_hover 100%);
+  box-shadow: 0 4px 16px @scan_glow_rgba;
+}
+
+#pdf-button {
+  background: linear-gradient(180deg, @pdf_grad_top 0%, @pdf_grad_bottom 100%);
+  color: @accent_fg_color;
+  font-weight: 700;
+}
+
+#pdf-button:hover {
+  box-shadow: 0 4px 16px @pdf_glow_rgba;
+}
+
+/* Пустое состояние */
+.empty-state {
+  opacity: 0.85;
+}
+
+.empty-icon {
+  color: @icon_subtle;
+  -gtk-icon-size: 96px;
+}
+
+.empty-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: @text_heading;
+  margin-top: 12px;
+}
+
+.empty-hint {
+  color: @text_muted;
+  margin-top: 4px;
+}
+
+/* Статусная строка */
+.status-label {
+  color: @text_secondary;
+  font-size: 13px;
+}
+
+.status-error {
+  color: @danger_color;
+  font-weight: 600;
+}
+
+/* Моноширинный сниппет конфига */
+.monospace {
+  font-family: monospace;
+  font-size: 12px;
+  background: @mono_bg_color;
+  border-radius: 8px;
+  padding: 8px;
+}
+
+/* Панель действий над страницами */
+.page-actions {
+  background: @page_actions_bg_color;
+  border-radius: 12px;
+  padding: 4px 8px;
+}
+.page-actions separator {
+  background: transparent;
+  margin: 6px 3px;
+}
+
+/* Прогресс */
+progressbar {
+  border-radius: 9999px;
+}
+
+/* --- Состояние устройств (0.2) --- */
+/* Точка в выпадающем списке и иконка в шапке; символические иконки
+   перекрашиваются через color (currentColor). */
+.dev-dot {
+  -gtk-icon-size: 10px;
+  margin-right: 2px;
+}
+
+.dev-ok {
+  color: #4ca768;
+}
+
+.dev-down {
+  color: #c25b5b;
+}
+
+.dev-unknown {
+  color: @text_muted;
+}
+
+/* --- Плитка «идёт сканирование» (0.2) --- */
+.page-tile-scanning {
+  border: 2px dashed @accent_bg_color;
+  background: @thumbnail_bg_color;
+}
+
+@keyframes scanning-pulse {
+  from { opacity: 0.55; }
+  50%  { opacity: 1.0; }
+  to   { opacity: 0.55; }
+}
+
+.page-tile-scanning {
+  animation: scanning-pulse 1200ms ease-in-out infinite;
+}
+
+/* Мигающая подсветка только что отсканированной плитки. */
+@keyframes tile-new {
+  from {
+    box-shadow: 0 0 0 4px @accent_glow_rgba,
+                0 4px 14px @shadow_tint_rgba;
+    border-color: @accent_bg_color;
+  }
+  to {
+    box-shadow: none;
+    border-color: transparent;
+  }
+}
+
+.page-tile-new {
+  animation: tile-new 1000ms ease-out;
+}

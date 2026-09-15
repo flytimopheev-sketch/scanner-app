@@ -1,0 +1,73 @@
+# GitLab CI (РЕД ОС / GitLab CE — часто используется в госсекторе).
+# Эквивалент .github/workflows/ci.yml.
+stages:
+  - check
+  - smoke
+  - screenshots
+  - package
+
+variables:
+  CARGO_HOME: .cargo
+  CACHE_POLICY: pull-push
+
+.cache: &cargo_cache
+  cache:
+    key: cargo-$CI_COMMIT_REF_SLUG
+    paths:
+      - .cargo/
+      - target/
+
+check:
+  stage: check
+  image: rust:latest
+  <<: *cargo_cache
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends
+      libgtk-4-dev libadwaita-1-dev pkg-config clang
+  script:
+    - cargo check --workspace --all-features
+    - cargo test -p scanner-core
+
+smoke:
+  stage: smoke
+  image: rust:latest
+  <<: *cargo_cache
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends
+      libgtk-4-dev libadwaita-1-dev pkg-config clang
+  script:
+    - cargo build --workspace
+    - SCANNER_BACKEND=mock target/debug/scanner-cli --list-devices
+    - SCANNER_BACKEND=mock target/debug/scanner-cli --out /tmp/demo.pdf
+    - test -s /tmp/demo.pdf
+
+screenshots:
+  stage: screenshots
+  image: rust:latest
+  <<: *cargo_cache
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends
+      libgtk-4-dev libadwaita-1-dev pkg-config clang
+      xvfb x11-xserver-utils x11-utils netpbm
+      adwaita-icon-theme librsvg2-common dbus-x11
+  script:
+    - cargo build -p scanner-gui -p scanner-worker
+    - bash scripts/screenshots.sh out/
+  artifacts:
+    paths:
+      - out/*.png
+    expire_in: 1 week
+
+rpm:
+  stage: package
+  image: fedora:latest
+  script:
+    - dnf install -y rpm-build rust cargo clang gtk4-devel libadwaita-devel
+    - mkdir -p ~/rpmbuild/SOURCES
+    - tar czf ~/rpmbuild/SOURCES/scanner-app.tar.gz .
+    - cp packaging/scanner-app.desktop packaging/scanner-app.svg ~/rpmbuild/SOURCES/ || true
+    - rpmbuild -bb packaging/scanner-app.spec
+  artifacts:
+    paths:
+      - ~/rpmbuild/RPMS/**/*.rpm
+    expire_in: 1 month

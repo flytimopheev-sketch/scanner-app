@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rpm:
+    name: Сборка RPM с бинарниками (для РЕД ОС, офлайн-установка)
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Инструменты сборки
+        run: |
+          dnf install -y rpm-build rust cargo clang gtk4-devel libadwaita-devel tar
+      - name: Release-сборка
+        run: cargo build --release
+      - name: Проверка бинарников
+        run: |
+          test -x target/release/scanner-gui
+          test -x target/release/scanner-worker
+          test -x target/release/scanner-cli
+      - name: Сборка RPM
+        run: |
+          VER=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          mkdir -p ~/rpmbuild/SOURCES
+          # Тар с собранными бинарниками + лицензия/док для %files
+          mkdir -p /tmp/binpkg && cd /tmp/binpkg
+          cp -a "$GITHUB_WORKSPACE/target/release/scanner-gui" \
+                "$GITHUB_WORKSPACE/target/release/scanner-worker" \
+                "$GITHUB_WORKSPACE/target/release/scanner-cli" .
+          cp -a "$GITHUB_WORKSPACE/LICENSE" "$GITHUB_WORKSPACE/README.md" .
+          tar czf ~/rpmbuild/SOURCES/scanner-app-${VER}-bin.tar.gz \
+            --transform "s,^,scanner-app-${VER}/," .
+          cp "$GITHUB_WORKSPACE/packaging/scanner-app.desktop" \
+             "$GITHUB_WORKSPACE/packaging/scanner-app.svg" ~/rpmbuild/SOURCES/
+          rpmbuild -bb "$GITHUB_WORKSPACE/packaging/scanner-app.spec" \
+            --define "_sourcedir $HOME/rpmbuild/SOURCES"
+          cp ~/rpmbuild/RPMS/*/*.rpm "$GITHUB_WORKSPACE/"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm
+          path: "*.rpm"
+
+  github-release:
+    name: Публикация GitHub Release
+    runs-on: ubuntu-24.04
+    needs: rpm
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rpm
+      - name: Создать Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" \
+            --title "Release ${{ github.ref_name }}" \
+            --generate-notes \
+            *.rpm

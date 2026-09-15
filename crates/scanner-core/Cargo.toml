@@ -1,0 +1,24 @@
+[package]
+name = "scanner-core"
+description = "Core library: SANE backends, scan jobs, profiles, image processing, export"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+# Direct libsane FFI backend (production path, requires sane-backends-devel at build time)
+sane-ffi = []
+# Low-level tests for the FFI declarations are type-checked by `cargo check --features sane-ffi`
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+image = { workspace = true }
+tiff = { workspace = true }
+lopdf = { workspace = true }
+rusqlite = { workspace = true }
+chrono = { workspace = true }

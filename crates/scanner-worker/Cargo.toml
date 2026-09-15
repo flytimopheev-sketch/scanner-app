@@ -1,0 +1,22 @@
+[package]
+name = "scanner-worker"
+description = "Scan worker process: JSON-lines protocol over stdin/stdout, talks to SANE"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "scanner-worker"
+path = "src/main.rs"
+
+[features]
+default = []
+sane-ffi = ["scanner-core/sane-ffi"]
+
+[dependencies]
+scanner-core = { path = "../scanner-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
