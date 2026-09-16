@@ -42,6 +42,31 @@ fn header_close(header: &adw::HeaderBar, dialog: &gtk::Window, label: &str, sugg
     header.pack_end(&btn);
 }
 
+/// Подготовить изображение в фоновом потоке и показать его в `pic`.
+///
+/// `render` выполняется в отдельном потоке и возвращает путь к готовому файлу
+/// (обычно результат `render_thumb`); `after` вызывается уже в главном потоке
+/// вместе с созданной текстурой. Декодирование скана 600 DPI занимает секунды,
+/// поэтому в главном потоке его быть не должно — интерфейс «зависал».
+fn render_into_async(
+    pic: gtk::Picture,
+    render: impl FnOnce() -> Option<std::path::PathBuf> + Send + 'static,
+    after: impl FnOnce(&gtk::gdk::Texture) + 'static,
+) {
+    let (tx, rx) = async_channel::bounded::<Option<std::path::PathBuf>>(1);
+    std::thread::spawn(move || {
+        let _ = tx.send_blocking(render());
+    });
+    glib::spawn_future_local(async move {
+        if let Ok(Some(path)) = rx.recv().await {
+            if let Some(tex) = crate::state::load_texture(&path) {
+                after(&tex);
+                pic.set_paintable(Some(&tex));
+            }
+        }
+    });
+}
+
 /// Ручки виджетов диалога добавления устройства.
 pub struct AddDeviceUi {
     pub dialog: gtk::Window,
@@ -536,26 +561,25 @@ pub fn show_crop(ctx: &Rc<AppCtx>) {
     let vals = Rc::new(RefCell::new([0.0f64, 0.0f64, 0.0f64, 0.0f64]));
     let aspect = Rc::new(RefCell::new(210.0f64 / 297.0f64));
 
-    // Загрузить превью (применяем поворот/фильтр, но без обрезки).
-    // Рендер откладываем на короткий таймер: диалог открывается мгновенно.
+    // Превью (поворот и фильтр применяем, обрезку — нет). Рендер идёт в
+    // фоновом потоке, диалог при этом открывается мгновенно.
     {
-        let pic = pic.clone();
-        let aspect = aspect.clone();
         let src = page.source.clone();
         let mut preview_edit = page.edit;
         preview_edit.crop = None;
-        glib::timeout_add_local(std::time::Duration::from_millis(60), move || {
-            let path = edited_cache_path(&src, &preview_edit, "crop");
-            let rendered = render_thumb(&src, &preview_edit, &path);
-            if rendered.is_ok() {
-                if let Some(tex) = crate::state::load_texture(&path) {
-                    let a = tex.width() as f64 / tex.height() as f64;
-                    *aspect.borrow_mut() = a;
-                    pic.set_paintable(Some(&tex));
+        let aspect = aspect.clone();
+        render_into_async(
+            pic.clone(),
+            move || {
+                let path = edited_cache_path(&src, &preview_edit, "crop");
+                render_thumb(&src, &preview_edit, &path).is_ok().then_some(path)
+            },
+            move |tex| {
+                if tex.height() > 0 {
+                    *aspect.borrow_mut() = tex.width() as f64 / tex.height() as f64;
                 }
-            }
-            glib::ControlFlow::Break
-        });
+            },
+        );
     }
 
     // Геометрия изображения внутри виджета (letterbox) — общая для
@@ -892,21 +916,18 @@ pub fn show_preview(ctx: &Rc<AppCtx>) {
     pic.set_can_shrink(true);
     content.append(&pic);
 
-    // Рендерим с короткой задержкой, чтобы окно открылось мгновенно.
+    // Рендер в фоновом потоке: окно открывается мгновенно, UI не замирает.
     {
         let src = page.source.clone();
         let edit = page.edit;
-        let pic = pic.clone();
-        glib::timeout_add_local(std::time::Duration::from_millis(60), move || {
-            let path = edited_cache_path(&src, &edit, "preview");
-            let rendered = render_thumb(&src, &edit, &path);
-            if rendered.is_ok() {
-                if let Some(tex) = crate::state::load_texture(&path) {
-                    pic.set_paintable(Some(&tex));
-                }
-            }
-            glib::ControlFlow::Break
-        });
+        render_into_async(
+            pic.clone(),
+            move || {
+                let path = edited_cache_path(&src, &edit, "preview");
+                render_thumb(&src, &edit, &path).is_ok().then_some(path)
+            },
+            |_| {},
+        );
     }
 
     dialog.present();

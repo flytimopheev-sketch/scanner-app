@@ -25,6 +25,15 @@ fn main() -> anyhow::Result<()> {
     if std::env::var_os("SCANNER_SHOTS").is_some_and(|v| !v.is_empty()) {
         std::env::set_var("GSK_RENDERER", "cairo");
     }
+    // Аппаратные рендереры GTK4 (vulkan/gl) на некоторых системах РЕД ОС
+    // вызывают зависание всей сессии (вплоть до гибели шины dbus) и рисуют
+    // пустые виджеты. По умолчанию — программный cairo; вернуть аппаратный
+    // рендеринг можно, задав SCANNER_GL=1.
+    if std::env::var_os("GSK_RENDERER").is_none()
+        && std::env::var_os("SCANNER_GL").map(|v| v != "1").unwrap_or(true)
+    {
+        std::env::set_var("GSK_RENDERER", "cairo");
+    }
 
     let app = adw::Application::builder()
         .application_id("ru.redos.ScannerApp")

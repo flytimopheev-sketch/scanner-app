@@ -12,7 +12,7 @@
 
 Name:           scanner-app
 Version:        0.2.0
-Release:        4%{?dist}
+Release:        5%{?dist}
 Summary:        Document scanner frontend for SANE (NAPS2-like)
 License:        GPL-3.0-or-later
 URL:            https://example.local/scanner-app
@@ -68,6 +68,14 @@ install -Dm 0644 %{SOURCE2} %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Mon Sep 15 2025 Scanner App Team <dev@example.local> - 0.2.0-5
+- GUI: аппаратные рендереры GTK4 по умолчанию отключены (cairo) — на части
+  систем РЕД ОС вызывали зависание сессии и пустые виджеты; SCANNER_GL=1
+  возвращает аппаратный рендеринг
+- GUI: предпросмотр и диалог обрезки рендерятся в фоновом потоке (декодирование
+  скана 600 DPI в главном потоке подвешивало интерфейс)
+- Ярлык упрощён (рендерер задаёт само приложение)
+
 * Mon Sep 15 2025 Scanner App Team <dev@example.local> - 0.2.0-4
 - Ярлык: GSK_RENDERER=cairo — GL-рендерер GTK4 на РЕД ОС рисует пустые виджеты;
   программный cairo отрисовывает интерфейс гарантированно
