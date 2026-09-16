@@ -17,6 +17,30 @@ use libadwaita as adw;
 use gtk4 as gtk;
 use scanner_core::i18n::{t, Lang};
 
+/// Какой рендерер GTK4 использовать.
+///
+/// Аппаратные рендереры (vulkan/gl) на части систем РЕД ОС рисуют пустые
+/// виджеты (окно открывается, но кнопок и списков не видно) и способны
+/// подвесить графическую сессию целиком, поэтому по умолчанию включается
+/// программный `cairo`.
+///
+/// * `renderer_set` — задал ли пользователь `GSK_RENDERER` сам (тогда не
+///   вмешиваемся);
+/// * `scanner_gl` — значение `SCANNER_GL`; `SCANNER_GL=1` требует
+///   аппаратный рендеринг.
+///
+/// Возвращает значение для `GSK_RENDERER` либо `None`, если переменную
+/// трогать не нужно.
+fn renderer_override(renderer_set: bool, scanner_gl: Option<&str>) -> Option<&'static str> {
+    if renderer_set {
+        return None;
+    }
+    if scanner_gl == Some("1") {
+        return None;
+    }
+    Some("cairo")
+}
+
 fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
@@ -29,11 +53,18 @@ fn main() -> anyhow::Result<()> {
     // вызывают зависание всей сессии (вплоть до гибели шины dbus) и рисуют
     // пустые виджеты. По умолчанию — программный cairo; вернуть аппаратный
     // рендеринг можно, задав SCANNER_GL=1.
-    if std::env::var_os("GSK_RENDERER").is_none()
-        && std::env::var_os("SCANNER_GL").map(|v| v != "1").unwrap_or(true)
-    {
-        std::env::set_var("GSK_RENDERER", "cairo");
+    if let Some(value) = renderer_override(
+        std::env::var_os("GSK_RENDERER").is_some(),
+        std::env::var_os("SCANNER_GL").as_deref().and_then(|v| v.to_str()),
+    ) {
+        std::env::set_var("GSK_RENDERER", value);
     }
+    // Выбранный рендерер — в журнал: без него причина «пустого окна» не видна.
+    scanner_core::config::append_log(&format!(
+        "renderer: GSK_RENDERER={} SCANNER_GL={}",
+        std::env::var("GSK_RENDERER").unwrap_or_else(|_| "auto".into()),
+        std::env::var("SCANNER_GL").unwrap_or_else(|_| "0".into()),
+    ));
 
     let app = adw::Application::builder()
         .application_id("ru.redos.ScannerApp")
@@ -92,4 +123,39 @@ fn main() -> anyhow::Result<()> {
 
     app.run();
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::renderer_override;
+
+    /// Обычный запуск (ярлык из меню, терминал) — программный cairo:
+    /// аппаратный рендерер на части систем РЕД ОС оставляет окно пустым
+    /// и может подвесить сессию.
+    #[test]
+    fn default_is_software_cairo() {
+        assert_eq!(renderer_override(false, None), Some("cairo"));
+    }
+
+    /// SCANNER_GL=1 — явный запрос аппаратного рендеринга.
+    #[test]
+    fn scanner_gl_enables_hardware() {
+        assert_eq!(renderer_override(false, Some("1")), None);
+    }
+
+    /// Любое другое значение SCANNER_GL аппаратный рендеринг не включает.
+    #[test]
+    fn other_scanner_gl_values_keep_cairo() {
+        for value in ["0", "", "yes", "true"] {
+            assert_eq!(renderer_override(false, Some(value)), Some("cairo"));
+        }
+    }
+
+    /// Свой GSK_RENDERER всегда важнее наших настроек.
+    #[test]
+    fn user_renderer_wins() {
+        assert_eq!(renderer_override(true, None), None);
+        assert_eq!(renderer_override(true, Some("1")), None);
+        assert_eq!(renderer_override(true, Some("0")), None);
+    }
 }

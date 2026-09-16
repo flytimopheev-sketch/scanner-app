@@ -22,8 +22,8 @@ jobs:
             libgtk-4-dev libadwaita-1-dev pkg-config clang
       - name: cargo check (все фичи)
         run: cargo check --workspace --all-features
-      - name: cargo test (scanner-core)
-        run: cargo test -p scanner-core
+      - name: cargo test (все крейты)
+        run: cargo test --workspace
 
   mock-smoke:
     name: Смок-тест на mock-бэкенде (CLI + воркер)
