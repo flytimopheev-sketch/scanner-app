@@ -7,91 +7,100 @@
 //! драйверов (тот же подход, что и в NAPS2).
 //!
 //! Архитектура потоков:
-//! * reader — читает stdin, шлёт `Msg::Request` в общий канал;
-//! * scan-threads — шлют `Msg::Response(Event)` в тот же канал;
-//! * writer — единственный пишет в stdout, обрабатывает запросы:
-//!   Cancel/Ping/Shutdown — сразу, тяжёлые SANE-операции — в фоновых
-//!   потоках (сериализуются op_lock), поэтому Cancel не блокируется
-//!   даже «зависшим» драйвером.
+//! * главный поток — читает stdin и обрабатывает запросы: Cancel/Ping/
+//!   Shutdown мгновенно (без обращений к SANE), тяжёлые операции (list/
+//!   capabilities/test/scan/preview) — в фоновых потоках, сериализуются
+//!   op_lock, поэтому Cancel не блокируется даже «зависшим» драйвером;
+//! * writer — единственный пишет в stdout; при завершении воркер ждёт,
+//!   пока очередь ответов опустеет, поэтому ответы не теряются.
 
 use scanner_core::scan_job::{run_scan_job, Request, Response, ScanEvent, WorkerRequest};
 use scanner_core::{create_backend, ScannerBackend};
 use std::io::{BufRead, Write};
-use std::sync::mpsc;
-use std::sync::{Arc, Mutex};
-
-enum Msg {
-    Request(WorkerRequest),
-    Response(Response),
-}
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
 
     let backend: Arc<dyn ScannerBackend> = create_backend();
-    let (tx, rx) = mpsc::channel::<Msg>();
+    let (tx, rx) = mpsc::channel::<Response>();
+    // Флаг «воркер завершается»: writer, обнаружив пустую очередь, выходит.
+    let done = Arc::new(AtomicBool::new(false));
 
-    // Поток чтения stdin.
-    {
-        let tx = tx.clone();
+    // Единственный писатель в stdout. Все ответы/события идут через канал,
+    // поэтому строки JSON не перемешиваются.
+    let writer = {
+        let done = done.clone();
         std::thread::spawn(move || {
-            let stdin = std::io::stdin();
-            for line in stdin.lock().lines() {
-                let line = match line {
-                    Ok(l) => l,
-                    Err(_) => break,
-                };
-                if line.trim().is_empty() {
-                    continue;
-                }
-                match serde_json::from_str::<WorkerRequest>(&line) {
-                    Ok(req) => {
-                        let done = matches!(req.request, Request::Shutdown);
-                        if tx.send(Msg::Request(req)).is_err() || done {
+            let stdout = std::io::stdout();
+            let mut out = stdout.lock();
+            loop {
+                match rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(resp) => {
+                        if write_response(&mut out, &resp).is_err() {
+                            log::warn!("stdout закрыт — воркер завершается");
+                            done.store(true, Ordering::SeqCst);
                             break;
                         }
                     }
-                    Err(e) => {
-                        let _ = tx.send(Msg::Response(Response::Err {
-                            id: 0,
-                            code: "bad_request".into(),
-                            message: format!("invalid request: {e}"),
-                        }));
+                    // Очередь пуста: если запрошено завершение — выходим.
+                    Err(mpsc::RecvTimeoutError::Timeout) => {
+                        if done.load(Ordering::SeqCst) {
+                            break;
+                        }
                     }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
-        });
-    }
+        })
+    };
 
     log::info!("scanner-worker started");
 
-    // Единственный писатель в stdout — отдельный поток. Все тяжёлые
-    // операции (list/capabilities/test/scan/preview) выполняются в
-    // фоновых потоках и сериализуются блокировкой op_lock: главный цикл
-    // не блокируется никогда, поэтому Cancel и Ping обрабатываются
-    // мгновенно, даже если драйвер SANE «завис» (раньше scanimage -L
-    // выполнялся прямо в этом цикле и до 90 секунд блокировал Cancel,
-    // из-за чего кнопки «Сканировать»/«Прервать» казались зависшими).
-    let writer = std::thread::spawn(move || {
-        let op_lock = Arc::new(Mutex::new(()));
-        let stdout = std::io::stdout();
-        let mut out = stdout.lock();
-        while let Ok(msg) = rx.recv() {
-            match msg {
-                Msg::Response(resp) => {
-                    if write_response(&mut out, &resp).is_err() {
-                        log::warn!("stdout закрыт — воркер завершается");
-                        break;
-                    }
-                }
-                Msg::Request(req) => {
-                    if !handle_request(&backend, &tx, &op_lock, req) {
-                        break;
-                    }
-                }
-            }
+    // Сериализация тяжёлых SANE-операций: два задания не должны
+    // одновременно бороться за одно устройство.
+    let op_lock = Arc::new(Mutex::new(()));
+
+    // Главный цикл: читаем stdin и обрабатываем запросы. Тяжёлые операции
+    // уходят в фоновые потоки, поэтому этот цикл всегда готов принять
+    // Cancel/Ping — кнопки «Сканировать»/«Прервать» не «подвисают».
+    let stdin = std::io::stdin();
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(_) => break,
+        };
+        if line.trim().is_empty() {
+            continue;
         }
-    });
+        let req = match serde_json::from_str::<WorkerRequest>(&line) {
+            Ok(req) => req,
+            Err(e) => {
+                let _ = tx.send(Response::Err {
+                    id: 0,
+                    code: "bad_request".into(),
+                    message: format!("invalid request: {e}"),
+                });
+                continue;
+            }
+        };
+        if !handle_request(&backend, &tx, &op_lock, req) {
+            break;
+        }
+        // stdout закрылся (GUI упал) — завершаемся, не дожидаясь новых команд.
+        if done.load(Ordering::SeqCst) {
+            break;
+        }
+    }
+
+    // Даём писателю выгрузить очередь ответов и только затем выходим:
+    // иначе ответы на последние запросы (ping/shutdown) терялись бы.
+    // Активную операцию SANE прерываем: иначе после закрытия stdin (GUI
+    // упал) оставался бы зависший scanimage, держащий сканер занятым.
+    backend.cancel();
+    done.store(true, Ordering::SeqCst);
     let _ = writer.join();
     Ok(())
 }
@@ -101,7 +110,7 @@ fn main() -> anyhow::Result<()> {
 /// в фоновый поток с сериализацией через `op_lock`.
 fn handle_request(
     backend: &Arc<dyn ScannerBackend>,
-    tx: &mpsc::Sender<Msg>,
+    tx: &mpsc::Sender<Response>,
     op_lock: &Arc<Mutex<()>>,
     req: WorkerRequest,
 ) -> bool {
@@ -136,7 +145,7 @@ fn handle_request(
                         Response::Err { id, code: e.code().into(), message: e.to_string() }
                     }
                 };
-                let _ = tx.send(Msg::Response(resp));
+                let _ = tx.send(resp);
             });
         }
         Request::Capabilities { device } => {
@@ -157,7 +166,7 @@ fn handle_request(
                         Response::Err { id, code: e.code().into(), message: e.to_string() }
                     }
                 };
-                let _ = tx.send(Msg::Response(resp));
+                let _ = tx.send(resp);
             });
         }
         Request::TestIp { address, protocol } => {
@@ -175,7 +184,7 @@ fn handle_request(
                         Response::Err { id, code: e.code().into(), message: e.to_string() }
                     }
                 };
-                let _ = tx.send(Msg::Response(resp));
+                let _ = tx.send(resp);
             });
         }
         Request::Preview { device, dpi, out_dir } => {
@@ -200,10 +209,13 @@ fn handle_request(
                         Response::Err { id, code: e.code().into(), message: e.to_string() }
                     }
                 };
-                let _ = tx.send(Msg::Response(resp));
+                let _ = tx.send(resp);
             });
         }
         Request::Scan { device, options, out_dir } => {
+            // Ответ «started» уходит ДО старта потока, поэтому GUI всегда
+            // получает его раньше событий сканирования.
+            send_ok(tx, id, serde_json::json!({ "started": true }));
             // Сканирование уходит в фоновый поток; op_lock гарантирует, что
             // два задания не будут одновременно бороться за один сканер
             // (иначе процессы scanimage «съедают» друг друга и устройство
@@ -216,20 +228,19 @@ fn handle_request(
                 let (ev_tx, ev_rx) = mpsc::channel::<ScanEvent>();
                 let handle = run_scan_job(backend, device, options, out_dir.into(), ev_tx);
                 for ev in ev_rx {
-                    if ev_out.send(Msg::Response(Response::Event { event: ev })).is_err() {
+                    if ev_out.send(Response::Event { event: ev }).is_err() {
                         break;
                     }
                 }
                 let _ = handle.join();
             });
-            send_ok(tx, id, serde_json::json!({ "started": true }));
         }
     }
     true
 }
 
-fn send_ok(tx: &mpsc::Sender<Msg>, id: u64, result: serde_json::Value) {
-    let _ = tx.send(Msg::Response(Response::Ok { id, result }));
+fn send_ok(tx: &mpsc::Sender<Response>, id: u64, result: serde_json::Value) {
+    let _ = tx.send(Response::Ok { id, result });
 }
 
 fn write_response<W: Write>(out: &mut W, resp: &Response) -> std::io::Result<()> {
