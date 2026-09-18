@@ -573,10 +573,10 @@ impl ScannerBackend for SaneFfiBackend {
 
     fn cancel(&self) {
         self.cancel.store(true, Ordering::SeqCst);
-        // sane_cancel безопасно вызывать из другого потока (спецификация SANE)
-        let _g = lock();
-        // Отменяем открытые дескрипторы через глобальный сброс невозможен,
-        // поэтому read_frame дополнительно проверяет флаг в цикле чтения.
+        // sane_cancel безопасно вызывать из другого потока (спецификация SANE).
+        // ВАЖНО: не берём глобальный SANE_LOCK — если операция «зависла»,
+        // удерживая замок, Cancel на нём бы заблокировался навсегда.
+        // read_frame дополнительно проверяет флаг в цикле чтения.
     }
 
     fn test_ip(&self, address: &str, protocol: &str) -> Result<TestResult> {

@@ -1,11 +1,17 @@
 //! Клиент воркера: отдельный процесс scanner-worker, JSON-lines поверх
 //! stdin/stdout. Ответы доставляются в главный цикл GTK через async-channel.
+//!
+//! Воркер может погибнуть (падение libsane и т.п.) — тогда `request()`
+//! прозрачно перезапускает процесс и повторяет запрос: интерфейс не
+//! остаётся «мёртвым» до перезапуска приложения.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use scanner_core::scan_job::{Request, Response, WorkerRequest};
 use scanner_core::ScanEvent;
@@ -21,16 +27,35 @@ pub enum WorkerIn {
     Dead(String),
 }
 
-pub struct WorkerClient {
+struct WorkerConn {
     req_tx: async_channel::Sender<(u64, Request)>,
+    /// Стал false, когда поток чтения обнаружил завершение воркера.
+    alive: Arc<AtomicBool>,
+}
+
+pub struct WorkerClient {
+    conn: RefCell<Option<WorkerConn>>,
+    on_msg: Rc<dyn Fn(WorkerIn)>,
     counter: Cell<u64>,
 }
 
 impl WorkerClient {
     /// Запустить воркера и мост в главный цикл GTK.
     pub fn spawn(on_msg: impl Fn(WorkerIn) + 'static) -> anyhow::Result<Rc<Self>> {
+        let client = Rc::new(Self {
+            conn: RefCell::new(None),
+            on_msg: Rc::new(on_msg),
+            counter: Cell::new(0),
+        });
+        client.start()?;
+        Ok(client)
+    }
+
+    /// Запустить (или перезапустить) процесс воркера и его потоки.
+    fn start(&self) -> anyhow::Result<()> {
         let (req_tx, req_rx) = async_channel::unbounded::<(u64, Request)>();
         let (in_tx, in_rx) = async_channel::unbounded::<WorkerIn>();
+        let alive = Arc::new(AtomicBool::new(true));
 
         // Путь к бинарнику воркера: рядом с GUI или в PATH.
         let bin = std::env::current_exe()
@@ -67,6 +92,8 @@ impl WorkerClient {
 
         // Поток чтения ответов/событий.
         if let Some(stdout) = child.stdout.take() {
+            let in_tx = in_tx.clone();
+            let alive = alive.clone();
             std::thread::spawn(move || {
                 for line in BufReader::new(stdout).lines().map_while(|l| l.ok()) {
                     let Ok(resp) = serde_json::from_str::<Response>(&line) else { continue };
@@ -80,27 +107,67 @@ impl WorkerClient {
                     }
                 }
                 let _ = child.wait();
+                alive.store(false, Ordering::SeqCst);
                 let _ = in_tx.send_blocking(WorkerIn::Dead("worker exited".into()));
             });
         } else {
+            alive.store(false, Ordering::SeqCst);
             let _ = child.wait();
         }
 
         // Мост в главный цикл GTK.
+        let on_msg = self.on_msg.clone();
         glib::spawn_future_local(async move {
             while let Ok(msg) = in_rx.recv().await {
                 on_msg(msg);
             }
         });
 
-        Ok(Rc::new(WorkerClient { req_tx, counter: Cell::new(0) }))
+        *self.conn.borrow_mut() = Some(WorkerConn { req_tx, alive });
+        Ok(())
     }
 
-    /// Отправить запрос, вернув id для сопоставления ответа.
-    pub fn request(&self, req: Request) -> u64 {
+    fn next_id(&self) -> u64 {
         let id = self.counter.get() + 1;
         self.counter.set(id);
-        let _ = self.req_tx.send_blocking((id, req));
+        id
+    }
+
+    /// Воркер жив?
+    pub fn is_alive(&self) -> bool {
+        self.conn
+            .borrow()
+            .as_ref()
+            .map(|c| c.alive.load(Ordering::SeqCst))
+            .unwrap_or(false)
+    }
+
+    /// Отправить запрос, вернув id для сопоставления ответа. Если воркер
+    /// завершился — прозрачно перезапускаем его и повторяем запрос.
+    pub fn request(&self, req: Request) -> u64 {
+        {
+            let conn = self.conn.borrow();
+            if let Some(c) = conn.as_ref() {
+                if c.alive.load(Ordering::SeqCst) {
+                    let id = self.next_id();
+                    if c.req_tx.send_blocking((id, req)).is_ok() {
+                        return id;
+                    }
+                }
+            }
+        }
+        let id = self.next_id();
+        if self.start().is_ok() {
+            if let Some(c) = self.conn.borrow().as_ref() {
+                let _ = c.req_tx.send_blocking((id, req));
+            }
+        } else {
+            (self.on_msg)(WorkerIn::Err {
+                id: 0,
+                code: "spawn".into(),
+                message: "не удалось перезапустить scanner-worker".into(),
+            });
+        }
         id
     }
 }

@@ -27,6 +27,12 @@
 @define-color danger_color #c25b5b;
 @define-color tile_picture_bg #ffffff;
 
+/* Явные цвета текста. На части систем (сторонняя тема GTK) унаследованный
+   цвет текста оказывается светлым — заголовки строк, значения выпадающих
+   списков и подписи плоских кнопок пропадают на светлой палитре приложения. */
+@define-color fg_strong #2a3142;
+@define-color fg_soft #5a6b8c;
+
 /* Свечения и тени */
 @define-color shadow_tint_rgba rgba(84, 105, 160, 0.10);
 @define-color shadow_tint_strong_rgba rgba(84, 105, 160, 0.18);
@@ -198,10 +204,28 @@ progressbar {
   color: @text_muted;
 }
 
-/* --- Плитка «идёт сканирование» (0.2) --- */
+/* Плитка «идёт сканирование» (0.2) */
 .page-tile-scanning {
   border: 2px dashed @accent_bg_color;
   background: @thumbnail_bg_color;
+}
+
+/* --- Явные цвета текста внутренних надписей --- */
+.sidebar label,
+row label,
+dropdown button label,
+button.flat label {
+  color: @fg_strong;
+}
+
+row label.subtitle {
+  color: @fg_soft;
+}
+
+/* Кнопка «Прервать»: сторонняя тема может оставить текст без фона. */
+button.pill.destructive-action {
+  background: @danger_color;
+  color: #ffffff;
 }
 
 @keyframes scanning-pulse {

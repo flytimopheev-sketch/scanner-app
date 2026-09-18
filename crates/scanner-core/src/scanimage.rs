@@ -5,7 +5,7 @@ use std::io::{BufRead, BufReader, Read};
 use std::net::{IpAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -49,6 +49,19 @@ impl ScanimageBackend {
         self.cancel.store(false, Ordering::SeqCst);
     }
 
+    /// Зарегистрировать текущий дочерний процесс scanimage. Если в слоте
+    /// остался прежний процесс (например, операцию прервали между spawn и
+    /// учётом) — завершаем его, чтобы «висящий» scanimage не держал сканер
+    /// и не ломал следующие задания.
+    fn store_child(&self, child: Child) {
+        let mut guard = self.child.lock().unwrap();
+        if let Some(mut old) = guard.take() {
+            let _ = old.kill();
+            let _ = old.wait();
+        }
+        *guard = Some(child);
+    }
+
     /// Запуск команды с чтением stdout/stderr в отдельных потоках,
     /// опросом завершения и поддержкой отмены/таймаута.
     fn run(&self, args: &[String], timeout: Duration) -> Result<(String, String, Option<i32>)> {
@@ -61,7 +74,7 @@ impl ScanimageBackend {
         let mut child = cmd.spawn().map_err(|e| ScannerError::Spawn(e.to_string()))?;
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");
-        *self.child.lock().unwrap() = Some(child);
+        self.store_child(child);
 
         let so = std::thread::spawn(move || {
             let mut s = String::new();
@@ -82,7 +95,14 @@ impl ScanimageBackend {
             if let Some(child) = guard.as_mut() {
                 match child.try_wait() {
                     Ok(Some(st)) => {
-                        outcome = Outcome::Done(st.code().unwrap_or(-1));
+                        let _ = child.wait();
+                        // Приоритет отмены: «Прервать» должно срабатывать,
+                        // даже если процесс завершился сам в этот момент.
+                        if self.cancel.load(Ordering::SeqCst) {
+                            outcome = Outcome::Cancelled;
+                        } else {
+                            outcome = Outcome::Done(st.code().unwrap_or(-1));
+                        }
                         break;
                     }
                     Ok(None) => {
@@ -131,7 +151,7 @@ impl ScannerBackend for ScanimageBackend {
     fn list_devices(&self) -> Result<Vec<ScannerDevice>> {
         self.reset();
         let args = vec!["-L".to_string()];
-        let (stdout, _stderr, _code) = self.run(&args, Duration::from_secs(90))?;
+        let (stdout, _stderr, _code) = self.run(&args, Duration::from_secs(25))?;
         Ok(parse_device_list(&stdout))
     }
 
@@ -151,12 +171,12 @@ impl ScannerBackend for ScanimageBackend {
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .env("SANE_CONFIG_DIR", &cfg_dir);
-            let stdout = run_capture(cmd, Duration::from_secs(30))?;
+            let stdout = run_capture(cmd, Duration::from_secs(15))?;
             return Ok(parse_capabilities(&stdout));
         }
 
         let args = vec!["--help".to_string(), "-d".to_string(), device.to_string()];
-        let (stdout, _stderr, _code) = self.run(&args, Duration::from_secs(30))?;
+        let (stdout, _stderr, _code) = self.run(&args, Duration::from_secs(15))?;
         Ok(parse_capabilities(&stdout))
     }
 
@@ -219,9 +239,12 @@ impl ScannerBackend for ScanimageBackend {
         let mut child = cmd.spawn().map_err(Self::spawn_err)?;
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");
-        *self.child.lock().unwrap() = Some(child);
+        self.store_child(child);
 
         let cancel = self.cancel.clone();
+        // Счётчик полученных байт изображения (планшет) — признак «живого»
+        // задания для сторожевого таймера ниже.
+        let bytes_now = Arc::new(AtomicUsize::new(0));
 
         // stdout: ADF — счётчик строк --batch-print; планшет — писатель в файл.
         let (batch_reader, single_writer) = if use_batch {
@@ -237,6 +260,7 @@ impl ScannerBackend for ScanimageBackend {
             (Some(h), None)
         } else {
             let path = out_file.expect("flatbed output path");
+            let wb = bytes_now.clone();
             let h = std::thread::spawn(move || {
                 use std::io::{Read, Write};
                 let mut total = 0usize;
@@ -251,6 +275,7 @@ impl ScannerBackend for ScanimageBackend {
                                     break;
                                 }
                                 total += k;
+                                wb.fetch_add(k, Ordering::Relaxed);
                             }
                         }
                     }
@@ -275,8 +300,16 @@ impl ScannerBackend for ScanimageBackend {
         enum Outcome {
             Done(bool),
             Cancelled,
+            /// Сканер перестал выдавать данные — задание прервано сторожем.
+            Stalled,
         }
         let outcome;
+        // Сторожевой таймер: если от сканера долго нет ни байта данных
+        // (драйвер завис, устройство отключилось посреди задания),
+        // завершаем scanimage сами — иначе задание висит «вечным».
+        const STALL: Duration = Duration::from_secs(300);
+        let mut last_activity: usize = 0;
+        let mut last_progress = Instant::now();
         loop {
             {
                 let mut guard = self.child.lock().unwrap();
@@ -287,7 +320,13 @@ impl ScannerBackend for ScanimageBackend {
                 match c.try_wait() {
                     Ok(Some(st)) => {
                         let _ = c.wait();
-                        outcome = Outcome::Done(st.success());
+                        // Приоритет отмены: «Прервать» должно срабатывать,
+                        // даже если процесс завершился сам в этот момент.
+                        if cancel.load(Ordering::SeqCst) {
+                            outcome = Outcome::Cancelled;
+                        } else {
+                            outcome = Outcome::Done(st.success());
+                        }
                         break;
                     }
                     Ok(None) => {
@@ -301,12 +340,34 @@ impl ScannerBackend for ScanimageBackend {
                     Err(e) => return Err(ScannerError::Io(e)),
                 }
             }
-            if use_batch {
+            // Признак «живого» задания: растущие файлы страниц (ADF)
+            // или растущий счётчик принятых байт (планшет).
+            let activity = if use_batch {
+                let mut bytes = 0usize;
                 for f in collect_batch_files(out_dir) {
                     if seen.insert(f.clone()) {
-                        progress(ScanProgress::PageDone(seen.len() as u32, f));
+                        progress(ScanProgress::PageDone(seen.len() as u32, f.clone()));
+                    }
+                    if let Ok(md) = std::fs::metadata(&f) {
+                        bytes = bytes.saturating_add(md.len() as usize);
                     }
                 }
+                bytes
+            } else {
+                bytes_now.load(Ordering::Relaxed)
+            };
+            if activity != last_activity {
+                last_activity = activity;
+                last_progress = Instant::now();
+            } else if last_progress.elapsed() > STALL {
+                let mut guard = self.child.lock().unwrap();
+                if let Some(c) = guard.as_mut() {
+                    let _ = c.kill();
+                    let _ = c.wait();
+                }
+                drop(guard);
+                outcome = Outcome::Stalled;
+                break;
             }
             std::thread::sleep(Duration::from_millis(300));
         }
@@ -320,6 +381,11 @@ impl ScannerBackend for ScanimageBackend {
 
         match outcome {
             Outcome::Cancelled => Err(ScannerError::Cancelled),
+            Outcome::Stalled => Err(ScannerError::Sane(format!(
+                "сканер не выдаёт данных более {} с — вероятно, завис драйвер; \
+                 задание остановлено, проверьте устройство и кабель",
+                STALL.as_secs()
+            ))),
             Outcome::Done(true) => {
                 let mut files: Vec<PathBuf> = if use_batch {
                     collect_batch_files(out_dir)
@@ -398,9 +464,11 @@ impl ScannerBackend for ScanimageBackend {
         let mut child = cmd.spawn().map_err(Self::spawn_err)?;
         let stdout = child.stdout.take().expect("stdout piped");
         let stderr = child.stderr.take().expect("stderr piped");
-        *self.child.lock().unwrap() = Some(child);
+        self.store_child(child);
 
         let out_path = out_dir.join("preview.png");
+        let bytes_now = Arc::new(AtomicUsize::new(0));
+        let wb = bytes_now.clone();
         let writer = std::thread::spawn(move || {
             use std::io::{Read, Write};
             let mut total = 0usize;
@@ -415,6 +483,7 @@ impl ScannerBackend for ScanimageBackend {
                                 break;
                             }
                             total += k;
+                            wb.fetch_add(k, Ordering::Relaxed);
                         }
                     }
                 }
@@ -430,7 +499,11 @@ impl ScannerBackend for ScanimageBackend {
             collected
         });
 
-        // Ожидание завершения с учётом отмены.
+        // Ожидание завершения с учётом отмены + сторожевой таймер
+        // (защита от «повисшего» драйвера предпросмотра).
+        const STALL: Duration = Duration::from_secs(300);
+        let mut last_bytes = 0usize;
+        let mut last_progress = Instant::now();
         loop {
             let mut guard = self.child.lock().unwrap();
             let Some(c) = guard.as_mut() else {
@@ -448,6 +521,21 @@ impl ScannerBackend for ScanimageBackend {
                         let _ = c.wait();
                         let _ = writer.join();
                         return Err(ScannerError::Cancelled);
+                    }
+                    let bytes = bytes_now.load(Ordering::Relaxed);
+                    if bytes != last_bytes {
+                        last_bytes = bytes;
+                        last_progress = Instant::now();
+                    } else if last_progress.elapsed() > STALL {
+                        let _ = c.kill();
+                        let _ = c.wait();
+                        drop(guard);
+                        let _ = writer.join();
+                        *self.child.lock().unwrap() = None;
+                        return Err(ScannerError::Sane(format!(
+                            "сканер не выдаёт данных более {} с — вероятно, завис драйвер",
+                            STALL.as_secs()
+                        )));
                     }
                 }
                 Err(e) => return Err(ScannerError::Io(e)),

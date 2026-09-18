@@ -1269,6 +1269,11 @@ fn merge_devices(ctx: &Ctx, found: Vec<ScannerDevice>) {
 
 pub fn do_scan(ctx: &Ctx) {
     let lang = ctx.state.borrow().lang;
+    // Защита от повторного запуска (двойной клик, отклик ещё в очереди):
+    // два параллельных задания ломают SANE-устройство и «зависают».
+    if ctx.state.borrow().scanning {
+        return;
+    }
     let dev = match ctx.state.borrow().device.clone() {
         Some(d) => d,
         None => {
@@ -1314,7 +1319,9 @@ fn do_preview(ctx: &Ctx) {
     let lang = ctx.state.borrow().lang;
     let dev = ctx.state.borrow().device.clone();
     match dev {
-        Some(dev) if !ctx.state.borrow().scanning => {
+        Some(dev)
+            if !ctx.state.borrow().scanning && !ctx.state.borrow().previewing =>
+        {
             ctx.state.borrow_mut().previewing = true;
             let out_dir = scanner_core::config::tmp_scan_dir()
                 .join(format!("preview-{}", chrono::Local::now().format("%Y%m%d-%H%M%S%3f")));
@@ -2412,6 +2419,19 @@ pub fn handle_worker_msg(ctx: &Ctx, msg: WorkerIn) {
             let text = format!("scanner-worker: {reason}");
             set_status(ctx, &text, true);
             scanner_core::config::append_log(&text);
+            // Сбрасываем незавершённые запросы: после перезапуска воркера
+            // (по следующему действию пользователя) старые id не должны
+            // матчиться с новыми ответами, а диалоги — крутить спиннеры вечно.
+            let stale: Vec<_> = ctx.pending.borrow_mut().drain().collect();
+            for (_, p) in stale {
+                if let Pending::TestIp(ad) = p {
+                    ad.spinner.stop();
+                    ad.check_btn.set_sensitive(true);
+                    ad.result_label.add_css_class("status-error");
+                    ad.result_label.set_text(&text);
+                    ad.save_btn.set_sensitive(false);
+                }
+            }
         }
     }
 }

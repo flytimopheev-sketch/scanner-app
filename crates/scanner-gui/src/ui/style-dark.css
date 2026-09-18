@@ -27,6 +27,10 @@
 @define-color danger_color #e07f7f;
 @define-color tile_picture_bg #31343f;
 
+/* Явные цвета текста (палитра поверх libadwaita). */
+@define-color fg_strong #e8ecf7;
+@define-color fg_soft #a8b3cc;
+
 /* Свечения и тени — темнее и мягче */
 @define-color shadow_tint_rgba rgba(0, 0, 0, 0.32);
 @define-color shadow_tint_strong_rgba rgba(0, 0, 0, 0.45);
