@@ -208,7 +208,7 @@ fn handle_request(
             // два задания не будут одновременно бороться за один сканер
             // (иначе процессы scanimage «съедают» друг друга и устройство
             // остаётся занятым зависшим процессом).
-            let tx = tx.clone();
+            let ev_out = tx.clone();
             let backend = backend.clone();
             let lock = op_lock.clone();
             std::thread::spawn(move || {
@@ -216,7 +216,7 @@ fn handle_request(
                 let (ev_tx, ev_rx) = mpsc::channel::<ScanEvent>();
                 let handle = run_scan_job(backend, device, options, out_dir.into(), ev_tx);
                 for ev in ev_rx {
-                    if tx.send(Msg::Response(Response::Event { event: ev })).is_err() {
+                    if ev_out.send(Msg::Response(Response::Event { event: ev })).is_err() {
                         break;
                     }
                 }
