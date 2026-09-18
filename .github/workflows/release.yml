@@ -4,60 +4,79 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      release_number:
+        description: "Номер Release для RPM (например 9). Пусто — взять из последнего тега v*"
+        required: false
+        default: ""
 
 env:
   CARGO_TERM_COLOR: always
+  # Каталог бинарников, слинкованных под glibc 2.34 (РЕД ОС 8 / RHEL 9)
+  TARGET_DIR: target/x86_64-unknown-linux-gnu/release
 
 jobs:
   rpm:
-    name: Сборка RPM с бинарниками (для РЕД ОС, офлайн-установка)
+    name: Сборка RPM на GitHub-раннере (без Docker)
     runs-on: ubuntu-24.04
-    container: fedora:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Инструменты сборки
+        with:
+          fetch-depth: 0        # теги нужны, чтобы взять номер Release
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Пакеты (GTK4/libadwaita + rpm-build)
         run: |
-          dnf install -y rpm-build cargo clang gtk4-devel libadwaita-devel tar pip curl
-      # Rust через rustup (для cargo zigbuild нужен его target-менеджер)
-      - name: rustup
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev pkg-config clang rpm binutils
+
+      - name: Кэш Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-release-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: cargo-release-${{ runner.os }}-
+
+      - name: cargo-zigbuild + zig (линковка под glibc 2.34)
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --profile minimal
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-      # Сборка под glibc 2.34 (РЕД ОС 8 / RHEL 9): cargo-zigbuild + zig
-      - name: cargo-zigbuild + zig
-        run: |
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup target add x86_64-unknown-linux-gnu
-          cargo install cargo-zigbuild
-          pip install --break-system-packages "ziglang==0.13.0" || pip install "ziglang==0.13.0"
-          printf '#!/bin/sh\nexec python3 -m ziglang "$@"\n' > /usr/local/bin/zig
-          chmod +x /usr/local/bin/zig
-      - name: Release-сборка (glibc 2.34)
+          command -v cargo-zigbuild >/dev/null || cargo install cargo-zigbuild
+          python3 -m pip install --break-system-packages "ziglang==0.13.0"
+          printf '#!/bin/sh\nexec python3 -m ziglang "$@"\n' | sudo tee /usr/local/bin/zig >/dev/null
+          sudo chmod +x /usr/local/bin/zig
+          zig version
+
+      - name: Номер Release RPM
+        id: rel
         env:
-          RUSTFLAGS: "-L native=/usr/lib64"
+          INPUT_REL: ${{ inputs.release_number }}
+        run: |
+          NAME="$GITHUB_REF_NAME"
+          if [ "$GITHUB_EVENT_NAME" != "push" ]; then
+            NAME="$(git tag --list 'v*' --sort=-creatordate | head -n1)"
+          fi
+          REL="${NAME##*-}"
+          case "$REL" in ''|*[!0-9]*) REL=1 ;; esac
+          if [ -n "${INPUT_REL:-}" ]; then REL="$INPUT_REL"; fi
+          echo "rel=$REL" >> "$GITHUB_OUTPUT"
+          echo "Release: $REL (источник: ${NAME:-нет тега})"
+
+      - name: Release-сборка под glibc 2.34
         run: cargo zigbuild --release --target x86_64-unknown-linux-gnu.2.34
+
       - name: Проверка бинарников
         run: |
-          test -x target/x86_64-unknown-linux-gnu/release/scanner-gui
-          test -x target/x86_64-unknown-linux-gnu/release/scanner-worker
-          test -x target/x86_64-unknown-linux-gnu/release/scanner-cli
-      - name: Сборка RPM
-        run: |
-          VER=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          mkdir -p ~/rpmbuild/SOURCES
-          # Тар с собранными бинарниками + лицензия/док для %files
-          mkdir -p /tmp/binpkg && cd /tmp/binpkg
-          cp -a "$GITHUB_WORKSPACE/target/x86_64-unknown-linux-gnu/release/scanner-gui" \
-                "$GITHUB_WORKSPACE/target/x86_64-unknown-linux-gnu/release/scanner-worker" \
-                "$GITHUB_WORKSPACE/target/x86_64-unknown-linux-gnu/release/scanner-cli" .
-          cp -a "$GITHUB_WORKSPACE/LICENSE" "$GITHUB_WORKSPACE/README.md" .
-          tar czf ~/rpmbuild/SOURCES/scanner-app-${VER}-bin.tar.gz \
-            --transform "s,^,scanner-app-${VER}/," .
-          cp "$GITHUB_WORKSPACE/packaging/scanner-app.desktop" \
-             "$GITHUB_WORKSPACE/packaging/scanner-app.svg" ~/rpmbuild/SOURCES/
-          rpmbuild -bb "$GITHUB_WORKSPACE/packaging/scanner-app.spec" \
-            --define "_sourcedir $HOME/rpmbuild/SOURCES"
-          cp ~/rpmbuild/RPMS/*/*.rpm "$GITHUB_WORKSPACE/"
+          test -x "$TARGET_DIR/scanner-gui"
+          test -x "$TARGET_DIR/scanner-worker"
+          test -x "$TARGET_DIR/scanner-cli"
+
+      - name: Сборка RPM (rpmbuild, без Docker)
+        run: bash scripts/build-rpm.sh "$TARGET_DIR" "${{ steps.rel.outputs.rel }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: rpm
@@ -71,19 +90,24 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: rpm
-      - name: Создать Release
+      - name: Контрольная сумма
+        run: |
+          sha256sum *.rpm > SHA256SUMS
+          cat SHA256SUMS
+      - name: Создать/обновить Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "${{ github.ref_name }}" > /dev/null 2>&1; then
-            gh release upload --clobber "${{ github.ref_name }}" *.rpm
+          TAG="${{ github.ref_name }}"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload --clobber "$TAG" ./*.rpm SHA256SUMS
           else
-            gh release create "${{ github.ref_name }}" \
-              --title "Release ${{ github.ref_name }}" \
+            gh release create "$TAG" \
+              --title "Release $TAG" \
+              --verify-tag \
               --generate-notes \
-              *.rpm
+              ./*.rpm SHA256SUMS
           fi

@@ -73,34 +73,25 @@ jobs:
           path: out/*.png
 
   rpm:
-    name: Сборка RPM (Fedora-контейнер, бинарники)
+    name: Сборка RPM (проверка spec, без Docker)
     runs-on: ubuntu-24.04
     needs: check
-    container: fedora:latest
     steps:
       - uses: actions/checkout@v4
-      - name: Инструменты сборки
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Пакеты (GTK4 + rpm-build)
         run: |
-          dnf install -y rpm-build rust cargo clang gtk4-devel libadwaita-devel tar
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libgtk-4-dev libadwaita-1-dev pkg-config clang rpm binutils
       - name: Release-сборка
         run: cargo build --release
-      - name: rpmbuild (бинарный RPM)
-        run: |
-          VER=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
-          mkdir -p ~/rpmbuild/SOURCES
-          mkdir -p /tmp/binpkg && cd /tmp/binpkg
-          cp -a "$GITHUB_WORKSPACE/target/release/scanner-gui" \
-                "$GITHUB_WORKSPACE/target/release/scanner-worker" \
-                "$GITHUB_WORKSPACE/target/release/scanner-cli" .
-          cp -a "$GITHUB_WORKSPACE/LICENSE" "$GITHUB_WORKSPACE/README.md" .
-          tar czf ~/rpmbuild/SOURCES/scanner-app-${VER}-bin.tar.gz \
-            --transform "s,^,scanner-app-${VER}/," .
-          cp "$GITHUB_WORKSPACE/packaging/scanner-app.desktop" \
-             "$GITHUB_WORKSPACE/packaging/scanner-app.svg" ~/rpmbuild/SOURCES/
-          rpmbuild -bb "$GITHUB_WORKSPACE/packaging/scanner-app.spec" \
-            --define "_sourcedir $HOME/rpmbuild/SOURCES"
-          cp ~/rpmbuild/RPMS/*/*.rpm "$GITHUB_WORKSPACE/"
+      # Смоук: собирается ли RPM из spec и найденных бинарников.
+      # RPM для РЕД ОС (glibc 2.34, номер Release из тега) собирает
+      # workflow Release — см. .github/workflows/release.yml
+      - name: rpmbuild (без Docker)
+        run: bash scripts/build-rpm.sh target/release 1
       - uses: actions/upload-artifact@v4
         with:
-          name: rpm
+          name: rpm-smoke
           path: "*.rpm"

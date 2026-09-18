@@ -145,28 +145,44 @@ impl WorkerClient {
     /// Отправить запрос, вернув id для сопоставления ответа. Если воркер
     /// завершился — прозрачно перезапускаем его и повторяем запрос.
     pub fn request(&self, req: Request) -> u64 {
-        {
-            let conn = self.conn.borrow();
-            if let Some(c) = conn.as_ref() {
-                if c.alive.load(Ordering::SeqCst) {
-                    let id = self.next_id();
-                    if c.req_tx.send_blocking((id, req)).is_ok() {
-                        return id;
-                    }
-                }
-            }
-        }
         let id = self.next_id();
-        if self.start().is_ok() {
-            if let Some(c) = self.conn.borrow().as_ref() {
-                let _ = c.req_tx.send_blocking((id, req));
+
+        // Мёртвый (или ещё не запущенный) воркер перезапускаем ДО отправки:
+        // так `req` перемещается ровно один раз.
+        let need_restart = {
+            let conn = self.conn.borrow();
+            match conn.as_ref() {
+                Some(c) => !c.alive.load(Ordering::SeqCst),
+                None => true,
             }
-        } else {
+        };
+        if need_restart && self.start().is_err() {
             (self.on_msg)(WorkerIn::Err {
                 id: 0,
                 code: "spawn".into(),
                 message: "не удалось перезапустить scanner-worker".into(),
             });
+            return id;
+        }
+
+        let mut send_failed = false;
+        {
+            let conn = self.conn.borrow();
+            match conn.as_ref() {
+                Some(c) => {
+                    if c.req_tx.send_blocking((id, req)).is_err() {
+                        // Канал закрыт: воркер умер между проверкой и отправкой.
+                        c.alive.store(false, Ordering::SeqCst);
+                        send_failed = true;
+                    }
+                }
+                None => send_failed = true,
+            }
+        }
+        if send_failed {
+            // Сообщаем UI: ответа по этому id не будет, воркер перезапустится
+            // при следующем действии пользователя.
+            (self.on_msg)(WorkerIn::Dead("канал воркера закрыт".into()));
         }
         id
     }

@@ -62,12 +62,10 @@ rpm:
   stage: package
   image: fedora:latest
   script:
-    - dnf install -y rpm-build rust cargo clang gtk4-devel libadwaita-devel
-    - mkdir -p ~/rpmbuild/SOURCES
-    - tar czf ~/rpmbuild/SOURCES/scanner-app.tar.gz .
-    - cp packaging/scanner-app.desktop packaging/scanner-app.svg ~/rpmbuild/SOURCES/ || true
-    - rpmbuild -bb packaging/scanner-app.spec
+    - dnf install -y rpm-build rust cargo clang gtk4-devel libadwaita-devel binutils tar
+    - cargo build --release
+    - bash scripts/build-rpm.sh target/release "${CI_PIPELINE_IID:-1}"
   artifacts:
     paths:
-      - ~/rpmbuild/RPMS/**/*.rpm
+      - "*.rpm"
     expire_in: 1 month

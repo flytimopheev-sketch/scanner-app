@@ -120,9 +120,11 @@ scanner-app/
 │   ├── scanner-worker/        # отдельный процесс: JSON-lines stdin/stdout
 │   ├── scanner-gui/           # GTK4/libadwaita: окно, диалоги, тема
 │   └── scanner-cli/           # консольный режим для скриптов и CI
-├── .github/workflows/ci.yml   # CI: check/test/smoke/скриншоты/RPM
+├── .github/workflows/ci.yml   # CI: check/test/smoke/скриншоты/RPM-смоук
+├── .github/workflows/release.yml # Release: RPM (glibc 2.34) + GitHub Release
 ├── .gitlab-ci.yml             # тот же конвейер для GitLab CE
 ├── scripts/screenshots.sh     # скриншот-сценарий одной командой
+├── scripts/build-rpm.sh       # сборка RPM без Docker (rpmbuild)
 ├── data/schema.sql            # схема SQLite (справочно)
 └── packaging/
     ├── scanner-app.spec       # RPM-пакет для РЕД ОС
@@ -146,6 +148,27 @@ sudo dnf install rust cargo clang gtk4-devel libadwaita-devel \
 
 Бинарники появятся в `target/release/`: `scanner-gui` и `scanner-worker`
 (воркер ищется рядом с GUI, затем в `PATH`).
+
+### RPM-пакет (РЕД ОС, офлайн-установка)
+
+RPM собирается обычным `rpmbuild` — **без Docker**:
+
+```bash
+sudo dnf install rpm-build
+./packaging/build.sh --release          # бинарники в target/release
+scripts/build-rpm.sh target/release 9   # 9 — номер Release (тег v0.2.0-9)
+sudo rpm -Uvh scanner-app-0.2.0-9.x86_64.rpm
+```
+
+Скрипт печатает метаданные пакета и максимальные версии символов glibc/glib,
+которые требуют бинарники (важно для офлайн-установки на РЕД ОС).
+
+Готовые RPM публикуются в GitHub Releases: workflow
+`.github/workflows/release.yml` собирает бинарники под glibc 2.34
+(РЕД ОС 8 / RHEL 9) через `cargo-zigbuild` прямо на GitHub-раннере (без
+Docker) и прикладывает к релизу `scanner-app-<версия>-<N>.x86_64.rpm`
+вместе с `SHA256SUMS`. Запуск — пушем тега `v0.2.0-N` или вручную
+(Actions → Release → Run workflow, номер Release можно задать явно).
 
 ### Debian / Ubuntu
 

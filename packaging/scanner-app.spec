@@ -1,18 +1,27 @@
 # RPM spec для РЕД ОС / RPM-based дистрибутивов.
 # Пакетирует ЗАРАНЕЕ СОБРАННЫЕ бинарники (release), поэтому на целевой
 # машине не нужны rust/cargo/GTK-devel — RPM устанавливается офлайн:
-#   sudo rpm -Uvh scanner-app-0.2.0-1.*.rpm
+#   sudo rpm -Uvh scanner-app-0.2.0-9.x86_64.rpm
 # SANE-стек (sane-backends/sane-airscan/ipp-usb) — жёсткий Requires:
 # без него приложение не может сканировать. Жёстких ELF-зависимостей
 # (GTK и т.п.) нет, чтобы установка проходила офлайн.
-# Сборка: rpmbuild -bb packaging/scanner-app-bin.spec
+#
+# Сборка БЕЗ Docker (только rpmbuild):
+#   scripts/build-rpm.sh target/release 9
+# вручную:
+#   rpmbuild -bb packaging/scanner-app.spec \
+#     --define "rel_num 9" --define "_topdir $PWD/rpmbuild"
 
 %global _enable_debug_package 0
 %global debug_package %{nil}
 
+# Release-номер RPM = номер выпуска (тег v0.2.0-N) и приходит от сборочного
+# скрипта/CI как --define "rel_num N". Если не задан — 1.
+%{!?rel_num: %global rel_num 1}
+
 Name:           scanner-app
 Version:        0.2.0
-Release:        6%{?dist}
+Release:        %{rel_num}%{?dist}
 Summary:        Document scanner frontend for SANE (NAPS2-like)
 License:        GPL-3.0-or-later
 URL:            https://example.local/scanner-app
@@ -68,6 +77,22 @@ install -Dm 0644 %{SOURCE2} %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/
 %{_datadir}/icons/hicolor/scalable/apps/%{name}.svg
 
 %changelog
+* Fri Sep 18 2026 Scanner App Team <dev@example.local> - 0.2.0-9
+- Воркер: главный цикл больше не блокируется операциями SANE (scanimage -L
+  занимал до 90 с и «подвешивал» кнопки «Сканировать»/«Прервать»);
+  Cancel/Ping/Shutdown обрабатываются мгновенно, тяжёлые операции идут в
+  фоновых потоках и сериализуются
+- Сканирование: два задания больше не борются за устройство (раньше
+  оставались зависшие процессы scanimage, и следующие сканы не стартовали)
+- Сканирование: сторожевой таймер — если сканер 5 минут не отдаёт данные,
+  задание завершается понятной ошибкой вместо бесконечного ожидания
+- GUI: авто-перезапуск упавшего scanner-worker, защита от повторного
+  запуска скана/предпросмотра, сброс «зависших» запросов при падении воркера
+- GUI: явные цвета текста в списках и кнопках (на части тем РЕД ОС подписи
+  были невидимы), кнопка «Прервать» выделена красным
+- RPM: номер Release следует за тегом (--define rel_num); сборка RPM без
+  Docker (scripts/build-rpm.sh), метаданные проверяются в CI
+
 * Tue Sep 16 2025 Scanner App Team <dev@example.local> - 0.2.0-6
 - GUI: выбор рендерера вынесен в проверяемую функцию (тесты: cairo по
   умолчанию, SCANNER_GL=1 — аппаратный, свой GSK_RENDERER — приоритетнее)
