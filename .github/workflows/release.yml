@@ -158,10 +158,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="${{ github.ref_name }}"
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload --clobber "$TAG" ./*.rpm SHA256SUMS
+          REPO="$GITHUB_REPOSITORY"
+          if gh release view --repo "$REPO" "$TAG" > /dev/null 2>&1; then
+            gh release upload --repo "$REPO" --clobber "$TAG" ./*.rpm SHA256SUMS
           else
-            gh release create "$TAG" \
+            gh release create --repo "$REPO" "$TAG" \
               --title "Release $TAG" \
               --verify-tag \
               --generate-notes \
